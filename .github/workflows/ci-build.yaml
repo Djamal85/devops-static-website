@@ -31,4 +31,4 @@ jobs:
             ${{ secrets.DOCKER_USERNAME }}/devops-static-website:v1
             ${{ secrets.DOCKER_USERNAME }}/devops-static-website:latest
 
-            
+
