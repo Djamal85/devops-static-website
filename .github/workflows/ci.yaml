@@ -1,4 +1,4 @@
-name: CI-CD Docker Pipeline
+name: Pipeline CI-CD Docker
 
 on:
   push:
@@ -17,55 +17,55 @@ env:
 
 jobs:
   build-and-push:
-    name: Build and Push Docker Image
+    name: Construire et publier l'image Docker
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source code
+      - name: Recuperer le code source
         uses: actions/checkout@v4
 
-      - name: Validate required Docker Hub secrets
+      - name: Verifier les secrets Docker Hub requis
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
-            echo "DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must be configured in GitHub Secrets."
+            echo "DOCKERHUB_USERNAME et DOCKERHUB_TOKEN doivent etre configures dans les secrets GitHub."
             exit 1
           fi
 
-      - name: Display image configuration
+      - name: Afficher la configuration de l'image
         run: |
-          echo "Versioned image: $IMAGE_REF"
-          echo "Rolling image: $LATEST_IMAGE_REF"
+          echo "Image versionnee : $IMAGE_REF"
+          echo "Image glissante : $LATEST_IMAGE_REF"
 
-      - name: Login to Docker Hub
+      - name: Se connecter a Docker Hub
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-      - name: Build Docker image
+      - name: Construire l'image Docker
         run: |
           docker build \
             -t "$IMAGE_REF" \
             -t "$LATEST_IMAGE_REF" \
             .
 
-      - name: Verify built image
+      - name: Verifier l'image construite
         run: |
           docker image inspect "$IMAGE_REF" > /dev/null
 
-      - name: Push Docker image tags
+      - name: Publier les tags de l'image Docker
         run: |
           docker push "$IMAGE_REF"
           docker push "$LATEST_IMAGE_REF"
 
   scan-trivy:
-    name: Scan Image with Trivy
+    name: Analyser l'image avec Trivy
     needs: build-and-push
     runs-on: ubuntu-latest
 
     steps:
-      - name: Run Trivy vulnerability scan
+      - name: Executer l'analyse de vulnerabilites Trivy
         uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_REF }}
@@ -80,30 +80,30 @@ jobs:
           TRIVY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Upload Trivy report artifact
+      - name: Televerser l'artefact du rapport Trivy
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-report
+          name: rapport-trivy
           path: trivy-report.txt
 
   deploy:
-    name: Deploy Validation
+    name: Validation du deploiement
     needs:
       - build-and-push
       - scan-trivy
     runs-on: ubuntu-latest
 
     steps:
-      - name: Login to Docker Hub
+      - name: Se connecter a Docker Hub
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-      - name: Pull validated image
+      - name: Recuperer l'image validee
         run: |
           docker pull "$IMAGE_REF"
 
-      - name: Run container on GitHub-hosted runner
+      - name: Demarrer le conteneur sur un runner GitHub-hosted
         run: |
           docker rm -f ci-app >/dev/null 2>&1 || true
           docker run -d \
@@ -111,12 +111,12 @@ jobs:
             -p 8080:80 \
             "$IMAGE_REF"
 
-      - name: Smoke test deployed container
+      - name: Executer le test rapide du conteneur deploie
         run: |
           sleep 5
           curl --fail http://127.0.0.1:8080
 
-      - name: Cleanup container
+      - name: Nettoyer le conteneur
         if: always()
         run: |
           docker rm -f ci-app || true
