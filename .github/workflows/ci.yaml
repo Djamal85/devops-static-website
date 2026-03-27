@@ -1,0 +1,122 @@
+name: CI-CD Docker Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: devops-static-website
+  IMAGE_TAG: ${{ github.sha }}
+  IMAGE_REF: ${{ secrets.DOCKERHUB_USERNAME }}/devops-static-website:${{ github.sha }}
+  LATEST_IMAGE_REF: ${{ secrets.DOCKERHUB_USERNAME }}/devops-static-website:latest
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Validate required Docker Hub secrets
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must be configured in GitHub Secrets."
+            exit 1
+          fi
+
+      - name: Display image configuration
+        run: |
+          echo "Versioned image: $IMAGE_REF"
+          echo "Rolling image: $LATEST_IMAGE_REF"
+
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t "$IMAGE_REF" \
+            -t "$LATEST_IMAGE_REF" \
+            .
+
+      - name: Verify built image
+        run: |
+          docker image inspect "$IMAGE_REF" > /dev/null
+
+      - name: Push Docker image tags
+        run: |
+          docker push "$IMAGE_REF"
+          docker push "$LATEST_IMAGE_REF"
+
+  scan-trivy:
+    name: Scan Image with Trivy
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ env.IMAGE_REF }}
+          format: table
+          output: trivy-report.txt
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: 1
+          hide-progress: true
+        env:
+          TRIVY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Upload Trivy report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.txt
+
+  deploy:
+    name: Deploy Validation
+    needs:
+      - build-and-push
+      - scan-trivy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Pull validated image
+        run: |
+          docker pull "$IMAGE_REF"
+
+      - name: Run container on GitHub-hosted runner
+        run: |
+          docker rm -f ci-app >/dev/null 2>&1 || true
+          docker run -d \
+            --name ci-app \
+            -p 8080:80 \
+            "$IMAGE_REF"
+
+      - name: Smoke test deployed container
+        run: |
+          sleep 5
+          curl --fail http://127.0.0.1:8080
+
+      - name: Cleanup container
+        if: always()
+        run: |
+          docker rm -f ci-app || true
