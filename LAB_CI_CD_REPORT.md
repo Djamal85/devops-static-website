@@ -24,6 +24,7 @@ Corriger et fiabiliser le pipeline GitHub Actions du projet `devops-static-websi
 - Ajout d'un tag image base sur `${{ github.sha }}` et d'un tag `latest`.
 - Ajout d'un scan de securite avec l'action officielle `aquasecurity/trivy-action`.
 - Ajout d'une validation de deploiement executable sur GitHub-hosted runner.
+- Durcissement de l'image de base en passant de `nginx:alpine` a `nginx:1-alpine-slim` pour reduire les vulnerabilites detectees par Trivy.
 
 ## Impact des changements
 

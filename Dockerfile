@@ -1,5 +1,5 @@
-# Use the official Nginx image to serve the static website.
-FROM nginx:alpine
+# Use the slimmer official Nginx image to reduce the vulnerability surface.
+FROM nginx:1-alpine-slim
 
 # Copy the static site into the default web root.
 COPY index.html /usr/share/nginx/html/
